@@ -137,7 +137,7 @@ void Track::SetOwner
 (const std::weak_ptr<TrackList> &list, TrackNodePointer node)
 {
    // BUG: When using this function to clear an owner, we may need to clear
-   // focussed track too.  Otherwise focus could remain on an invisible (or deleted) track.
+   // focused track too.  Otherwise focus could remain on an invisible (or deleted) track.
    mList = list;
    mNode = node;
 }
@@ -1224,6 +1224,21 @@ std::shared_ptr<const Track> Track::SubstituteOriginalTrack() const
    return SharedPointer();
 }
 
+bool Track::SupportsBasicEditing() const
+{
+   return true;
+}
+
+auto Track::GetIntervals() const -> ConstIntervals
+{
+   return {};
+}
+
+auto Track::GetIntervals() -> Intervals
+{
+   return {};
+}
+
 // Serialize, not with tags of its own, but as attributes within a tag.
 void Track::WriteCommonXMLAttributes(
    XMLWriter &xmlFile, bool includeNameAndSelected) const
@@ -1268,6 +1283,8 @@ void Track::AdjustPositions()
       pList->ResizingEvent(mNode);
    }
 }
+
+TrackIntervalData::~TrackIntervalData() = default;
 
 bool TrackList::HasPendingTracks() const
 {

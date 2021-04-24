@@ -181,6 +181,50 @@ private:
    long mValue;
 };
 
+//! Optional extra information about an interval, appropriate to a subtype of Track
+struct TrackIntervalData {
+   virtual ~TrackIntervalData();
+};
+
+//! A start and an end time, and non-mutative access to optional extra information
+/*! @invariant `Start() <= End()` */
+class ConstTrackInterval {
+public:
+
+   /*! @pre `start <= end` */
+   ConstTrackInterval( double start, double end,
+      std::unique_ptr<TrackIntervalData> pExtra = {} )
+   : start{ start }, end{ end }, pExtra{ std::move( pExtra ) }
+   {
+      wxASSERT( start <= end );
+   }
+
+   ConstTrackInterval( ConstTrackInterval&& ) = default;
+   ConstTrackInterval &operator=( ConstTrackInterval&& ) = default;
+
+   double Start() const { return start; }
+   double End() const { return end; }
+   const TrackIntervalData *Extra() const { return pExtra.get(); }
+
+private:
+   double start, end;
+protected:
+   // TODO C++17: use std::any instead
+   std::unique_ptr< TrackIntervalData > pExtra;
+};
+
+//! A start and an end time, and mutative access to optional extra information
+/*! @invariant `Start() <= End()` */
+class TrackInterval : public ConstTrackInterval {
+public:
+   using ConstTrackInterval::ConstTrackInterval;
+
+   TrackInterval(TrackInterval&&) = default;
+   TrackInterval &operator= (TrackInterval&&) = default;
+
+   TrackIntervalData *Extra() const { return pExtra.get(); }
+};
+
 //! Template generated base class for Track lets it host opaque UI related objects
 using AttachedTrackObjects = ClientData::Site<
    Track, ClientData::Base, ClientData::SkipCopying, std::shared_ptr
@@ -268,6 +312,32 @@ class AUDACITY_DLL_API Track /* not final */
    // original; else return this track
    std::shared_ptr<const Track> SubstituteOriginalTrack() const;
 
+   using IntervalData = TrackIntervalData;
+   using Interval = TrackInterval;
+   using Intervals = std::vector< Interval >;
+   using ConstInterval = ConstTrackInterval;
+   using ConstIntervals = std::vector< ConstInterval >;
+
+   //! Whether this track type implements cut-copy-paste; by default, true
+   virtual bool SupportsBasicEditing() const;
+
+   using Holder = std::shared_ptr<Track>;
+
+   //! Find or create the destination track for a paste, maybe in a different project
+   /*! @return A smart pointer to the track; its `use_count()` can tell whether it is new */
+   virtual Holder PasteInto( AudacityProject & ) const = 0;
+
+   //! Report times on the track where important intervals begin and end, for UI to snap to
+   /*!
+   Some intervals may be empty, and no ordering of the intervals is assumed.
+   */
+   virtual ConstIntervals GetIntervals() const;
+
+   /*! @copydoc GetIntervals()
+   This overload exposes the extra data of the intervals as non-const
+    */
+   virtual Intervals GetIntervals();
+
  public:
    mutable wxSize vrulerSize;
 
@@ -329,12 +399,11 @@ private:
 
    void Init(const Track &orig);
 
-   using Holder = std::shared_ptr<Track>;
    // public nonvirtual duplication function that invokes Clone():
    virtual Holder Duplicate() const;
 
    // Called when this track is merged to stereo with another, and should
-   // take on some paramaters of its partner.
+   // take on some parameters of its partner.
    virtual void Merge(const Track &orig);
 
    wxString GetName() const { return mName; }
@@ -423,7 +492,7 @@ private:
    struct Executor{};
 
    //! Helper for recursive case of metafunction implementing Track::TypeSwitch
-   /*! Mutually recursive (in compile time) with tempate Track::Executor. */
+   /*! Mutually recursive (in compile time) with template Track::Executor. */
    struct Dispatcher {
       //! First, recursive case of metafunction, defers generation of operator ()
       template< typename R, typename ConcreteType,

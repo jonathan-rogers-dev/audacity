@@ -65,6 +65,8 @@ ProjectAudioManager::ProjectAudioManager( AudacityProject &project )
 {
    static ProjectStatus::RegisteredStatusWidthFunction
       registerStatusWidthFunction{ StatusWidthFunction };
+   project.Bind( EVT_CHECKPOINT_FAILURE,
+      &ProjectAudioManager::OnCheckpointFailure, this );
 }
 
 ProjectAudioManager::~ProjectAudioManager() = default;
@@ -365,7 +367,8 @@ void ProjectAudioManager::Stop(bool stopStream /* = true*/)
    }
 
    const auto toolbar = ToolManager::Get( *project ).GetToolBar(ScrubbingBarID);
-   toolbar->EnableDisableButtons();
+   if (toolbar)
+      toolbar->EnableDisableButtons();
 }
 
 void ProjectAudioManager::Pause()
@@ -881,7 +884,7 @@ void ProjectAudioManager::OnAudioIOStopRecording()
          // Add to history
          // We want this to have No-fail-guarantee if we get here from exception
          // handling of recording, and that means we rely on the last autosave
-         // successully committed to the database, not risking a failure
+         // successfully committed to the database, not risking a failure
          history.PushState(XO("Recorded Audio"), XO("Record"),
             UndoPush::NOAUTOSAVE);
 
@@ -950,6 +953,12 @@ void ProjectAudioManager::OnSoundActivationThreshold()
    if ( gAudioIO && &project == gAudioIO->GetOwningProject() ) {
       wxTheApp->CallAfter( [this]{ Pause(); } );
    }
+}
+
+void ProjectAudioManager::OnCheckpointFailure(wxCommandEvent &evt)
+{
+   evt.Skip();
+   Stop();
 }
 
 bool ProjectAudioManager::Playing() const

@@ -55,6 +55,8 @@ class GUIPrefs final : public PrefsPanel
    // Unlike GetLang, gives en rather than en_GB or en_US for result.
    static wxString GetLangShort();
 
+   static wxString GetLocaleName();
+
  private:
    void Populate();
 
@@ -67,6 +69,7 @@ class GUIPrefs final : public PrefsPanel
 };
 
 int ShowClippingPrefsID();
+int ShowTrackNameInWaveformPrefsID();
 
 extern ChoiceSetting
      GUIManualLocation

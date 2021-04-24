@@ -36,10 +36,8 @@
 
 #include "sndfile.h"
 
-#include "../WaveClip.h"
 #include "../ShuttleGui.h"
 
-#include "../prefs/QualityPrefs.h"
 #include "../widgets/ProgressDialog.h"
 
 #ifndef SNDFILE_1
@@ -203,11 +201,8 @@ PCMImportFileHandle::PCMImportFileHandle(const FilePath &name,
    // the quality of the original file.
    //
 
-   mFormat = QualityPrefs::SampleFormatChoice();
-
-   if (mFormat != floatSample &&
-       sf_subtype_more_than_16_bits(mInfo.format))
-      mFormat = floatSample;
+   mFormat =
+      ChooseFormat(sf_subtype_to_effective_format(mInfo.format));
 }
 
 TranslatableString PCMImportFileHandle::GetFileDescription()
@@ -306,7 +301,7 @@ ProgressResult PCMImportFileHandle::Import(WaveTrackFactory *trackFactory,
       // iter not used outside this scope.
       auto iter = channels.begin();
       for (int c = 0; c < mInfo.channels; ++iter, ++c)
-         *iter = trackFactory->NewWaveTrack(mFormat, mInfo.samplerate);
+         *iter = NewWaveTrack(*trackFactory, mFormat, mInfo.samplerate);
    }
 
    auto fileTotalFrames =

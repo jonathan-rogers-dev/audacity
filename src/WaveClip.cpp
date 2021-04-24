@@ -24,7 +24,6 @@
 #include "Experimental.h"
 
 #include <math.h>
-#include <functional>
 #include <vector>
 #include <wx/log.h>
 
@@ -225,7 +224,7 @@ bool WaveClip::GetSamples(samplePtr buffer, sampleFormat format,
 }
 
 /*! @excsafety{Strong} */
-void WaveClip::SetSamples(samplePtr buffer, sampleFormat format,
+void WaveClip::SetSamples(constSamplePtr buffer, sampleFormat format,
                    sampleCount start, size_t len)
 {
    // use Strong-guarantee
@@ -1159,12 +1158,13 @@ float WaveClip::GetRMS(double t0, double t1, bool mayThrow) const
    return mSequence->GetRMS(s0, s1-s0, mayThrow);
 }
 
-void WaveClip::ConvertToSampleFormat(sampleFormat format)
+void WaveClip::ConvertToSampleFormat(sampleFormat format,
+   const std::function<void(size_t)> & progressReport)
 {
    // Note:  it is not necessary to do this recursively to cutlines.
    // They get converted as needed when they are expanded.
 
-   auto bChanged = mSequence->ConvertToSampleFormat(format);
+   auto bChanged = mSequence->ConvertToSampleFormat(format, progressReport);
    if (bChanged)
       MarkChanged();
 }
@@ -1172,8 +1172,9 @@ void WaveClip::ConvertToSampleFormat(sampleFormat format)
 /*! @excsafety{No-fail} */
 void WaveClip::UpdateEnvelopeTrackLen()
 {
-   mEnvelope->SetTrackLen
-      ((mSequence->GetNumSamples().as_double()) / mRate, 1.0 / GetRate());
+   auto len = (mSequence->GetNumSamples().as_double()) / mRate;
+   if (len != mEnvelope->GetTrackLen())
+      mEnvelope->SetTrackLen(len, 1.0 / GetRate());
 }
 
 void WaveClip::TimeToSamplesClip(double t0, sampleCount *s0) const
@@ -1186,27 +1187,24 @@ void WaveClip::TimeToSamplesClip(double t0, sampleCount *s0) const
       *s0 = sampleCount( floor(((t0 - mOffset) * mRate) + 0.5) );
 }
 
-void WaveClip::ClearDisplayRect() const
+/*! @excsafety{Strong} */
+std::shared_ptr<SampleBlock> WaveClip::AppendNewBlock(
+   samplePtr buffer, sampleFormat format, size_t len)
 {
-   mDisplayRect.x = mDisplayRect.y = -1;
-   mDisplayRect.width = mDisplayRect.height = -1;
+   return mSequence->AppendNewBlock( buffer, format, len );
 }
 
-void WaveClip::SetDisplayRect(const wxRect& r) const
+/*! @excsafety{Strong} */
+void WaveClip::AppendSharedBlock(const std::shared_ptr<SampleBlock> &pBlock)
 {
-   mDisplayRect = r;
-}
-
-void WaveClip::GetDisplayRect(wxRect* r)
-{
-   *r = mDisplayRect;
+   mSequence->AppendSharedBlock( pBlock );
 }
 
 /*! @excsafety{Partial}
  -- Some prefix (maybe none) of the buffer is appended,
 and no content already flushed to disk is lost. */
-bool WaveClip::Append(samplePtr buffer, sampleFormat format,
-                      size_t len, unsigned int stride /* = 1 */)
+bool WaveClip::Append(constSamplePtr buffer, sampleFormat format,
+                      size_t len, unsigned int stride)
 {
    //wxLogDebug(wxT("Append: len=%lli"), (long long) len);
    bool result = false;
@@ -1741,7 +1739,9 @@ void WaveClip::Resample(int rate, ProgressDialog *progress)
 
    if (error)
       throw SimpleMessageBoxException{
-         XO("Resampling failed.")
+         XO("Resampling failed."),
+         XO("Warning"),
+         "Error:_Resampling"
       };
    else
    {

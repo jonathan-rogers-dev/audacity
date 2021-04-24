@@ -39,7 +39,6 @@ effects from this one class.
 #include <wx/wxprec.h>
 #include <wx/button.h>
 #include <wx/checkbox.h>
-#include <wx/dcbuffer.h>
 #include <wx/dcclient.h>
 #include <wx/filename.h>
 #include <wx/log.h>
@@ -364,7 +363,7 @@ FilePaths LadspaEffectsModule::GetSearchPaths()
    pathVar = wxString::FromUTF8(getenv("LADSPA_PATH"));
    if (!pathVar.empty())
    {
-      wxStringTokenizer tok(pathVar);
+      wxStringTokenizer tok(pathVar, wxPATH_SEP);
       while (tok.HasMoreTokens())
       {
          pathList.push_back(tok.GetNextToken());

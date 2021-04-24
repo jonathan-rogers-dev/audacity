@@ -49,6 +49,7 @@ ImportLOF.cpp, and ImportAUP.cpp.
 #include <wx/listbox.h>
 #include <wx/log.h>
 #include <wx/sizer.h>         //for wxBoxSizer
+#include "../FFmpeg.h"
 #include "../FileNames.h"
 #include "../ShuttleGui.h"
 #include "../Project.h"
@@ -476,6 +477,14 @@ bool Importer::Import( AudacityProject &project,
    }
 #endif
 
+   // Bug #2647: Peter has a Word 2000 .doc file that is recognized and imported by FFmpeg.
+   if (wxFileName(fName).GetExt() == wxT("doc")) {
+      errorMessage =
+         XO("\"%s\" \nis a not an audio file. \nAudacity cannot open this type of file.")
+         .Format( fName );
+      return false;
+   }
+
    using ImportPluginPtrs = std::vector< ImportPlugin* >;
 
    // This list is used to call plugins in correct order
@@ -792,8 +801,13 @@ bool Importer::Import( AudacityProject &project,
       // we were not able to recognize the file type
       errorMessage = XO(
 /* i18n-hint: %s will be the filename */
-"Audacity did not recognize the type of the file '%s'.\nTry installing FFmpeg. For uncompressed files, also try File > Import > Raw Data.")
-         .Format( fName );
+"Audacity did not recognize the type of the file '%s'.\n\n%sFor uncompressed files, also try File > Import > Raw Data.")
+         .Format( fName,
+#if defined(USE_FFMPEG)
+                  !FFmpegLibsInst()
+                  ? XO("Try installing FFmpeg.\n\n") :
+#endif
+                  Verbatim("") );
    }
    else
    {

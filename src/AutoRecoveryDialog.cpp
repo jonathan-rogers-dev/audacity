@@ -11,10 +11,11 @@ Paul Licameli split from AutoRecovery.cpp
 #include "AutoRecoveryDialog.h"
 
 #include "ActiveProjects.h"
-#include "FileNames.h"
 #include "ProjectManager.h"
 #include "ProjectFileIO.h"
+#include "ProjectFileManager.h"
 #include "ShuttleGui.h"
+#include "TempDirectory.h"
 #include "widgets/AudacityMessageBox.h"
 #include "widgets/wxPanelWrapper.h"
 
@@ -145,7 +146,7 @@ void AutoRecoveryDialog::PopulateOrExchange(ShuttleGui &S)
 
 void AutoRecoveryDialog::PopulateList()
 {
-   wxString tempdir = FileNames::TempDir();
+   wxString tempdir = TempDirectory::TempDir();
    wxString pattern = wxT("*.") + FileNames::UnsavedProjectExtension();
    FilePaths files;
 
@@ -163,6 +164,10 @@ void AutoRecoveryDialog::PopulateList()
          {
             files.push_back(fullPath);
          }
+      }
+      else
+      {
+         ActiveProjects::Remove(file);
       }
    }
 
@@ -185,6 +190,7 @@ void AutoRecoveryDialog::PopulateList()
          mFiles.push_back(fn.GetFullPath());
          mFileList->InsertItem(item, wxT(""));
          mFileList->SetItem(item, 1, fn.GetName());
+         mFileList->CheckItem(item, true);
          item++;
       }
    }
@@ -234,18 +240,36 @@ void AutoRecoveryDialog::OnDiscardSelected(wxCommandEvent &WXUNUSED(evt))
       return;
    }
 
-   int ret = AudacityMessageBox(
-      XO("Are you sure you want to discard the selected projects?\n\n"
-         "Choosing \"Yes\" permanently deletes the selected projects immediately."),
-      XO("Automatic Crash Recovery"),
-      wxICON_QUESTION | wxYES_NO | wxNO_DEFAULT, this);
-
-   if (ret == wxNO)
+   long item = -1;
+   bool selectedTemporary = false;
+   while (!selectedTemporary)
    {
-      return;
+      item = mFileList->GetNextItem(item, wxLIST_NEXT_ALL, wxLIST_STATE_DONTCARE);
+      if (item == wxNOT_FOUND)
+         break;
+      if (!mFileList->IsItemChecked(item))
+         continue;
+      FilePath fileName = mFiles[item];
+      wxFileName file(fileName);
+      if (file.GetExt().IsSameAs(FileNames::UnsavedProjectExtension()))
+         selectedTemporary = true;
    }
 
-   long item = -1;
+   // Don't give this warning message if all of the checked items are
+   // previously saved, non-temporary projects.
+   if (selectedTemporary) {
+      int ret = AudacityMessageBox(
+         XO("Are you sure you want to discard the selected projects?\n\n"
+            "Choosing \"Yes\" permanently deletes the selected projects immediately."),
+         XO("Automatic Crash Recovery"),
+         wxICON_QUESTION | wxYES_NO | wxNO_DEFAULT, this);
+
+      if (ret == wxNO)
+         return;
+   }
+
+   item = -1;
+   FilePaths files;
    while (true)
    {
       item = mFileList->GetNextItem(item, wxLIST_NEXT_ALL, wxLIST_STATE_DONTCARE);
@@ -255,6 +279,8 @@ void AutoRecoveryDialog::OnDiscardSelected(wxCommandEvent &WXUNUSED(evt))
       }
       if (!mFileList->IsItemChecked(item))
       {
+         // Keep in list
+         files.push_back(mFiles[item]);
          continue;
       }
       FilePath fileName = mFiles[item];
@@ -265,34 +291,22 @@ void AutoRecoveryDialog::OnDiscardSelected(wxCommandEvent &WXUNUSED(evt))
       {
          file.SetFullName(wxT(""));
 
-         wxFileName temp(FileNames::TempDir(), wxT(""));
+         wxFileName temp(TempDirectory::TempDir(), wxT(""));
          if (file == temp)
-         {
-            if (wxRemoveFile(fileName))
-            {
-               if (wxFileExists(fileName + wxT("-shm")))
-               {
-                  wxRemoveFile(fileName + wxT("-shm"));
-               }
-
-               if (wxFileExists(fileName + wxT("-wal")))
-               {
-                  wxRemoveFile(fileName + wxT("-wal"));
-               }
-
-               if (wxFileExists(fileName + wxT("-journal")))
-               {
-                  wxRemoveFile(fileName + wxT("-journal"));
-               }
-            }
-         }
+            ProjectFileIO::RemoveProject(fileName);
       }
+      else
+         // Don't remove from disk, but do (later) open the database
+         // of this saved file, and discard edits
+         files.push_back(fileName);
 
       // Forget all about it
       ActiveProjects::Remove(fileName);
    }
 
    PopulateList();
+
+   mFiles = files;
 
    if (mFileList->GetItemCount() == 0)
    {
@@ -408,7 +422,7 @@ static bool RecoverAllProjects(const FilePaths &files,
    // Open a project window for each auto save file
    wxString filename;
 
-   for (int i = 0, cnt = files.size(); i < cnt; ++i)
+   for (auto &file: files)
    {
       AudacityProject *proj = nullptr;
       if (*pproj)
@@ -419,13 +433,20 @@ static bool RecoverAllProjects(const FilePaths &files,
       }
 
       // Open project.
-      if (ProjectManager::OpenProject(proj, files[i], false) == nullptr)
+      if (ProjectManager::OpenProject(proj, file, false) == nullptr)
       {
          return false;
       }
    }
 
    return true;
+}
+
+static void DiscardAllProjects(const FilePaths &files)
+{
+   // Open and close each file, invisibly, removing its Autosave blob
+   for (auto &file: files)
+      ProjectFileManager::DiscardAutosave(file);
 }
 
 bool ShowAutoRecoveryDialogIfNeeded(AudacityProject **pproj, bool *didRecoverAnything)
@@ -460,7 +481,11 @@ bool ShowAutoRecoveryDialogIfNeeded(AudacityProject **pproj, bool *didRecoverAny
       switch (ret)
       {
       case ID_SKIP:
+         success = true;
+         break;
+
       case ID_DISCARD_SELECTED:
+         DiscardAllProjects(dialog.GetRecoverables());
          success = true;
          break;
 

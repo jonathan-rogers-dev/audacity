@@ -32,12 +32,85 @@
 #include <wx/filename.h>
 #include <wx/utils.h>
 
-#include "../FileNames.h"
 #include "../Prefs.h"
 #include "../ShuttleGui.h"
+#include "../TempDirectory.h"
 #include "../widgets/AudacityMessageBox.h"
+#include "../widgets/ReadOnlyText.h"
+#include "../widgets/wxTextCtrlWrapper.h"
 
 using namespace FileNames;
+using namespace TempDirectory;
+
+class FilesystemValidator : public wxValidator
+{
+public:
+   FilesystemValidator(const TranslatableString &message)
+   :  wxValidator()
+   {
+      mMessage = message;
+   }
+
+   virtual wxObject* Clone() const wxOVERRIDE
+   {
+      return safenew FilesystemValidator(mMessage);
+   }
+
+   virtual bool Validate(wxWindow* WXUNUSED(parent)) wxOVERRIDE
+   {
+      wxTextCtrl* tc = wxDynamicCast(GetWindow(), wxTextCtrl);
+      if (!tc) {
+         return true;
+      }
+
+      if (FATFilesystemDenied(tc->GetValue(), mMessage)) {
+         return false;
+      }
+
+      return true;
+   }
+
+   virtual bool TransferToWindow() wxOVERRIDE
+   {
+      return true;
+   }
+
+   virtual bool TransferFromWindow() wxOVERRIDE
+   {
+      return true;
+   }
+
+   void OnChar(wxKeyEvent &evt)
+   {
+      evt.Skip();
+
+      wxTextCtrl* tc = wxDynamicCast(GetWindow(), wxTextCtrl);
+      if (!tc) {
+         return;
+      }
+
+      auto keycode = evt.GetUnicodeKey();
+      if (keycode < WXK_SPACE || keycode == WXK_DELETE) {
+         return;
+      }
+
+      wxString path = tc->GetValue();
+      path.insert(tc->GetInsertionPoint(), keycode);
+
+      if (FATFilesystemDenied(path, mMessage)) {
+         evt.Skip(false);
+         return;
+      }
+   }
+
+   TranslatableString mMessage;
+
+   wxDECLARE_EVENT_TABLE();
+};
+
+wxBEGIN_EVENT_TABLE(FilesystemValidator, wxValidator)
+    EVT_CHAR(FilesystemValidator::OnChar)
+wxEND_EVENT_TABLE()
 
 enum
 {
@@ -49,6 +122,7 @@ enum
    SaveTextID,
    ImportTextID,
    ExportTextID,
+   MacrosTextID,
    TextsEnd,
 
    ButtonsStart = 1020,
@@ -56,6 +130,7 @@ enum
    SaveButtonID,
    ImportButtonID,
    ExportButtonID,
+   MacrosButtonID,
    ButtonsEnd
 };
 
@@ -116,8 +191,8 @@ void DirectoriesPrefs::PopulateOrExchange(ShuttleGui &S)
    S.StartStatic(XO("Default directories"));
    {
       S.AddSpace(1);
-      S.AddFixedText(XO("Leave a field empty to go to the last directory used for that operation. Fill in a field to "
-                        "always go to that directory for that operation."), false, 450);
+      S.AddFixedText(XO("Leave a field empty to go to the last directory used for that operation.\n"
+         "Fill in a field to always go to that directory for that operation."), false, 450);
       S.AddSpace(5);
 
       S.StartMultiColumn(3, wxEXPAND);
@@ -136,6 +211,8 @@ void DirectoriesPrefs::PopulateOrExchange(ShuttleGui &S)
                                       {PreferenceKey(Operation::Save, PathType::User),
                                        wxT("")},
                                       30);
+         if( mSaveText )
+            mSaveText->SetValidator(FilesystemValidator(XO("Projects cannot be saved to FAT drives.")));
          S.Id(SaveButtonID).AddButton(XXO("B&rowse..."));
 
          S.Id(ImportTextID);
@@ -151,6 +228,15 @@ void DirectoriesPrefs::PopulateOrExchange(ShuttleGui &S)
                                      wxT("")},
                                     30);
          S.Id(ExportButtonID).AddButton(XXO("Bro&wse..."));
+
+         S.Id(MacrosTextID);
+         mMacrosText = S.TieTextBox(XXO("&Macro output:"),
+                                    {PreferenceKey(Operation::MacrosOut, PathType::User),
+                                     wxT("")},
+                                    30);
+         S.Id(MacrosButtonID).AddButton(XXO("Bro&wse..."));
+
+
       }
       S.EndMultiColumn();
    }
@@ -167,11 +253,12 @@ void DirectoriesPrefs::PopulateOrExchange(ShuttleGui &S)
                                   {PreferenceKey(Operation::Temp, PathType::_None),
                                    wxT("")},
                                   30);
+         if( mTempText )
+            mTempText->SetValidator(FilesystemValidator(XO("Temporary files directory cannot be on a FAT drive.")));
          S.Id(TempButtonID).AddButton(XXO("Brow&se..."));
 
-         S.AddPrompt(XXO("&Free Space:"));
-         mFreeSpace = S.Style(wxTE_READONLY).AddTextBox({}, wxT(""), 30);
-         mFreeSpace->SetName(XO("Free Space").Translation());
+         mFreeSpace = S
+            .AddReadOnlyText(XXO("&Free Space:"), "");
       }
       S.EndMultiColumn();
    }
@@ -202,6 +289,11 @@ void DirectoriesPrefs::OnTempBrowse(wxCommandEvent &evt)
    {
       wxFileName tmpDirPath;
       tmpDirPath.AssignDir(dlog.GetPath());
+
+      if (FATFilesystemDenied(tmpDirPath.GetFullPath(),
+          XO("Temporary files directory cannot be on a FAT drive."))) {
+         return;
+      }
 
       // Append an "audacity_temp" directory to this path if necessary (the
       // default, the existing pref (as stored in the control), and any path
@@ -270,6 +362,15 @@ void DirectoriesPrefs::OnBrowse(wxCommandEvent &evt)
       return;
    }
 
+   if (evt.GetId() == SaveButtonID)
+   {
+      if (FATFilesystemDenied(dlog.GetPath(),
+                              XO("Projects cannot be saved to FAT drives.")))
+      {
+         return;
+      }
+   }
+
    tc->SetValue(dlog.GetPath());
 }
 
@@ -287,6 +388,7 @@ bool DirectoriesPrefs::Validate()
          wxOK | wxICON_ERROR);
       return false;
    }
+
    if (!Temp.DirExists()) {
       int ans = AudacityMessageBox(
          XO("Directory %s does not exist. Create it?")
@@ -321,7 +423,7 @@ bool DirectoriesPrefs::Validate()
    }
 
    wxFileName oldDir;
-   oldDir.SetPath(FileNames::TempDir());
+   oldDir.SetPath(TempDir());
    if (Temp != oldDir) {
       AudacityMessageBox(
          XO(

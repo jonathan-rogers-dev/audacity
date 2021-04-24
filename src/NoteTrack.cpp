@@ -683,6 +683,27 @@ QuantizedTimeAndBeat NoteTrack::NearestBeatTime( double time ) const
    return { seq_time + GetOffset(), beat };
 }
 
+Track::Holder NoteTrack::PasteInto( AudacityProject & ) const
+{
+   auto pNewTrack = std::make_shared<NoteTrack>();
+   pNewTrack->Paste(0.0, this);
+   return pNewTrack;
+}
+
+auto NoteTrack::GetIntervals() const -> ConstIntervals
+{
+   ConstIntervals results;
+   results.emplace_back( GetStartTime(), GetEndTime() );
+   return results;
+}
+
+auto NoteTrack::GetIntervals() -> Intervals
+{
+   Intervals results;
+   results.emplace_back( GetStartTime(), GetEndTime() );
+   return results;
+}
+
 void NoteTrack::AddToDuration( double delta )
 {
    auto &seq = GetSeq();

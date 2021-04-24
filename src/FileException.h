@@ -46,9 +46,12 @@ public:
 
    ~FileException() override;
 
+   static TranslatableString WriteFailureMessage(const wxFileName &fileName);
+
 protected:
    //! %Format an error message appropriate for the @ref Cause.
    TranslatableString ErrorMessage() const override;
+   wxString ErrorHelpUrl() const override;
 
 public:
    Cause cause;

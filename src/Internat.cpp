@@ -103,8 +103,14 @@ void Internat::Init()
    // or to directories
    auto forbid = wxFileName::GetForbiddenChars(format);
 
-   for(auto cc: forbid)
+   for (auto cc: forbid) {
+#if defined(__WXGTK__)
+      if (cc == wxT('*') || cc == wxT('?')) {
+         continue;
+      }
+#endif
       exclude.push_back(wxString{ cc });
+   }
 
    // The path separators may not be forbidden, so add them
    //auto separators = wxFileName::GetPathSeparators(format);
@@ -117,6 +123,13 @@ void Internat::Init()
          exclude.push_back(wxString{ cc });
    }
 }
+
+void Internat::SetCeeNumberFormat()
+{
+   wxSetlocale( LC_NUMERIC, "C" );
+   mDecimalSeparator = '.';
+}
+
 
 wxChar Internat::GetDecimalSeparator()
 {

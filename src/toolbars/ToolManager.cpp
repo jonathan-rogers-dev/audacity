@@ -95,7 +95,15 @@ ToolFrame::ToolFrame
 
    // Transfer the bar to the ferry
    bar->Reparent(this);
-   SetMinSize(bar->GetDockedSize());
+
+   // Bug 2120 (comment 6 residual): No need to set a minimum size
+   // if the toolbar is not resizable. On GTK, setting a minimum
+   // size will prevent the frame from shrinking if the toolbar gets
+   // reconfigured and needs to resize smaller.
+   if (bar->IsResizable())
+   {
+      SetMinSize(bar->GetDockedSize());
+   }
 
    {
       // We use a sizer to maintain proper spacing
@@ -214,7 +222,7 @@ void ToolFrame::OnMotion( wxMouseEvent & event )
 
       rect.SetBottomRight( pos );
 
-      // Keep it within max size, if specificed
+      // Keep it within max size, if specified
       wxSize maxsz = mBar->GetMaxSize();
       if (maxsz != wxDefaultSize)
       {
@@ -1123,8 +1131,15 @@ void ToolManager::Expose( int type, bool show )
 void ToolManager::LayoutToolBars()
 {
    // Update the layout
-   mTopDock->LayoutToolBars();
-   mBotDock->LayoutToolBars();
+   if (mTopDock)
+   {
+      mTopDock->LayoutToolBars();
+   }
+
+   if (mBotDock)
+   {
+      mBotDock->LayoutToolBars();
+   }
 }
 
 //
@@ -1195,6 +1210,8 @@ void ToolManager::OnMouse( wxMouseEvent & event )
             if (mPrevDock)
                mPrevDock->GetConfiguration().Remove( mDragBar );
             UndockBar(mp);
+            // Rearrange the remaining toolbars before trying to re-insert this one.
+            LayoutToolBars();
          }
       }
 
@@ -1512,7 +1529,12 @@ void ToolManager::HandleEscapeKey()
 
 void ToolManager::DoneDragging()
 {
-   // Done dragging
+   // Done dragging - ensure grabber button isn't pushed
+   if( mDragBar )
+   {
+      mDragBar->SetDocked( mDragBar->GetDock(), false );
+   }
+
    // Release capture
    auto &window = GetProjectFrame( *mParent );
    if( window.HasCapture() )

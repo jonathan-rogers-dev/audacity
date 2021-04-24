@@ -52,7 +52,7 @@ void PlayCurrentRegionAndWait(const CommandContext &context,
 
    projectAudioManager.PlayCurrentRegion(looped, cutpreview);
 
-   if (project.mBatchMode > 0 && t0 != t1) {
+   if (project.mBatchMode > 0 && t0 != t1 && !looped) {
       wxYieldIfNeeded();
 
       /* i18n-hint: This title appears on a dialog that indicates the progress
@@ -389,7 +389,7 @@ void OnTimerRecord(const CommandContext &context)
       return;
    }
 
-   // We check the selected tracks to see if there is enough of them to accomodate
+   // We check the selected tracks to see if there is enough of them to accommodate
    // all input channels and all of them have the same sampling rate.
    // Those checks will be later performed by recording function anyway,
    // but we want to warn the user about potential problems from the very start.
@@ -572,7 +572,7 @@ void OnPunchAndRoll(const CommandContext &context)
          error = true;
       else {
          // May adjust t1 left
-         // Let's ignore the possibilty of a clip even shorter than the
+         // Let's ignore the possibility of a clip even shorter than the
          // crossfade duration!
          newt1 = std::min(newt1, clip->GetEndTime() - crossFadeDuration);
       }
@@ -1253,17 +1253,7 @@ BaseItemSharedPtr ExtraPlayAtSpeedMenu()
       Command( wxT("PlaySpeedInc"), XXO("&Increase Playback Speed"),
          FN(OnPlaySpeedInc), CaptureNotBusyFlag() ),
       Command( wxT("PlaySpeedDec"), XXO("&Decrease Playback Speed"),
-         FN(OnPlaySpeedDec), CaptureNotBusyFlag() ),
-
-      // These were on the original transcription toolbar.
-      // But they are not on the
-      // shortened one.
-      Command( wxT("MoveToPrevLabel"), XXO("Move to &Previous Label"),
-         FN(OnMoveToPrevLabel),
-         CaptureNotBusyFlag() | TrackPanelHasFocus(), wxT("Alt+Left") ),
-      Command( wxT("MoveToNextLabel"), XXO("Move to &Next Label"),
-         FN(OnMoveToNextLabel),
-         CaptureNotBusyFlag() | TrackPanelHasFocus(), wxT("Alt+Right") )
+         FN(OnPlaySpeedDec), CaptureNotBusyFlag() )
    ) ) };
    return menu;
 }
@@ -1271,6 +1261,27 @@ BaseItemSharedPtr ExtraPlayAtSpeedMenu()
 AttachedItem sAttachment3{
    wxT("Optional/Extra/Part1"),
    Shared( ExtraPlayAtSpeedMenu() )
+};
+
+BaseItemSharedPtr ExtraSelectionItems()
+{
+   using Options = CommandManager::Options;
+   static BaseItemSharedPtr items{
+   (FinderScope{ findCommandHandler },
+   Items(wxT("MoveToLabel"),
+      Command(wxT("MoveToPrevLabel"), XXO("Move to Pre&vious Label"),
+         FN(OnMoveToPrevLabel),
+         CaptureNotBusyFlag() | TrackPanelHasFocus(), wxT("Alt+Left")),
+      Command(wxT("MoveToNextLabel"), XXO("Move to Ne&xt Label"),
+         FN(OnMoveToNextLabel),
+         CaptureNotBusyFlag() | TrackPanelHasFocus(), wxT("Alt+Right"))
+   )) };
+   return items;
+}
+
+AttachedItem sAttachment4{
+  { wxT("Optional/Extra/Part1/Select"), { OrderingHint::End, {} } },
+  Shared(ExtraSelectionItems())
 };
 
 }

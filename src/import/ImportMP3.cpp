@@ -64,7 +64,6 @@ static Importer::RegisteredUnusableImportPlugin registered
 #include "../Prefs.h"
 #include "../Tags.h"
 #include "../WaveTrack.h"
-#include "../prefs/QualityPrefs.h"
 #include "../widgets/AudacityMessageBox.h"
 #include "../widgets/ProgressDialog.h"
 
@@ -333,7 +332,7 @@ bool MP3ImportFileHandle::Open()
       return false;
    }
 
-   // Get the legnth of the file
+   // Get the length of the file
    mFileLen = mFile.Seek(0, wxFromEnd);
    if (mFileLen == wxInvalidOffset || mFile.Error())
    {
@@ -662,8 +661,6 @@ bool MP3ImportFileHandle::FillBuffer()
 void MP3ImportFileHandle::LoadID3(Tags *tags)
 {
 #ifdef USE_LIBID3TAG
-   tags->Clear();
-
    struct id3_file *id3file = NULL;
    auto cleanup = finally([&]
    {
@@ -687,7 +684,7 @@ void MP3ImportFileHandle::LoadID3(Tags *tags)
 
    // Load the tags
    struct id3_tag *id3tags = id3_file_tag(id3file);
-   if (!id3tags)
+   if (!id3tags || id3tags->nframes == 0)
    {
       return;
    }
@@ -722,6 +719,8 @@ void MP3ImportFileHandle::LoadID3(Tags *tags)
       // Finally convert to and return wxString
       return wxString((char *) buf, converter);
    };
+
+   tags->Clear();
 
    // Extract tags from ID3 frames and add to our tags
    bool have_year = false;
@@ -981,7 +980,7 @@ mad_flow MP3ImportFileHandle::FilterCB(struct mad_stream const *stream,
    }
 
    // Skip the VBR Scale
-   if (len >= 4 && flags && hasScale)
+   if (len >= 4 && flags & hasScale)
    {
       ptr += 4;
       len -= 4;
@@ -1034,11 +1033,12 @@ enum mad_flow MP3ImportFileHandle::OutputCB(struct mad_header const * WXUNUSED(h
 
       mChannels.resize(mNumChannels);
 
-      auto format = QualityPrefs::SampleFormatChoice();
-
       for (auto &channel: mChannels)
       {
-         channel = mTrackFactory->NewWaveTrack(format, pcm->samplerate);
+         // Mad library header explains the 32 bit fixed point format with
+         // 28 fractional bits.  Effective sample format must therefore be
+         // more than 24, and this is our only choice now.
+         channel = NewWaveTrack(*mTrackFactory, floatSample, pcm->samplerate);
       }
    }
 

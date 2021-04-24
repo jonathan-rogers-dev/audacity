@@ -17,6 +17,7 @@
 
 #include "../Audacity.h"
 #include "Effect.h"
+#include "TimeWarper.h"
 
 #include "../Experimental.h"
 
@@ -27,6 +28,7 @@
 #include <wx/tokenzr.h>
 
 #include "../AudioIO.h"
+#include "../DBConnection.h"
 #include "../LabelTrack.h"
 #include "../Mix.h"
 #include "../PluginManager.h"
@@ -98,6 +100,7 @@ Effect::Effect()
 
    mUIParent = NULL;
    mUIDialog = NULL;
+   mUIFlags = 0;
 
    mNumAudioIn = 0;
    mNumAudioOut = 0;
@@ -1133,7 +1136,7 @@ bool Effect::SetAutomationParameters(const wxString & parms)
       Effect::MessageBox(
          XO("%s: Could not load settings below. Default settings will be used.\n\n%s")
             .Format( GetName(), preset ) );
-      // We are using defualt settings and we still wish to continue.
+      // We are using default settings and we still wish to continue.
       return true;
       //return false;
    }
@@ -1177,6 +1180,14 @@ wxString Effect::HelpPage()
    return wxEmptyString;
 }
 
+void Effect::SetUIFlags(unsigned flags) {
+   mUIFlags = flags;
+}
+
+unsigned Effect::TestUIFlags(unsigned mask) {
+   return mask & mUIFlags;
+}
+
 bool Effect::IsBatchProcessing()
 {
    return mIsBatch;
@@ -1215,7 +1226,7 @@ bool Effect::DoEffect(double projectRate,
    // This is for performance purposes only, no additional recovery implied
    auto &pProject = *const_cast<AudacityProject*>(FindProject()); // how to remove this const_cast?
    auto &pIO = ProjectFileIO::Get(pProject);
-   AutoCommitTransaction trans(pIO, "Effect");
+   TransactionScope trans(pIO.GetConnection(), "Effect");
 
    // Update track/group counts
    CountWaveTracks();
@@ -1240,6 +1251,9 @@ bool Effect::DoEffect(double projectRate,
          // LastUsedDuration may have been modified by Preview.
          SetDuration(oldDuration);
       }
+      else
+         trans.Commit();
+
       End();
       ReplaceProcessedTracks( false );
    } );
@@ -1870,28 +1884,14 @@ bool Effect::ProcessTrack(int count,
    {
       auto pProject = FindProject();
 
-      // PRL:  this code was here and could not have been the right
-      // intent, mixing time and sampleCount values:
-      // StepTimeWarper warper(mT0 + genLength, genLength - (mT1 - mT0));
-
-      // This looks like what it should have been:
-      // StepTimeWarper warper(mT0 + genDur, genDur - (mT1 - mT0));
-      // But rather than fix it, I will just disable the use of it for now.
-      // The purpose was to remap split lines inside the selected region when
-      // a generator replaces it with sound of different duration.  But
-      // the "correct" version might have the effect of mapping some splits too
-      // far left, to before the selection.
-      // In practice the wrong version probably did nothing most of the time,
-      // because the cutoff time for the step time warper was 44100 times too
-      // far from mT0.
-
       // Transfer the data from the temporary tracks to the actual ones
       genLeft->Flush();
       // mT1 gives us the NEW selection. We want to replace up to GetSel1().
       auto &selectedRegion = ViewInfo::Get( *pProject ).selectedRegion;
-      left->ClearAndPaste(mT0,
-         selectedRegion.t1(), genLeft.get(), true, true,
-         nullptr /* &warper */);
+      auto t1 = selectedRegion.t1();
+      PasteTimeWarper warper{ t1, mT0 + genLeft->GetEndTime() };
+      left->ClearAndPaste(mT0, t1, genLeft.get(), true, true,
+         &warper);
 
       if (genRight)
       {

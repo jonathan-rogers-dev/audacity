@@ -128,8 +128,9 @@ LabelDialog::~LabelDialog()
 void LabelDialog::PopulateLabels()
 {
    // Build the initial (empty) grid
-   mGrid->CreateGrid(0, Col_Max);
+   mGrid->CreateGrid(0, Col_Max, wxGrid::wxGridSelectRows);
    mGrid->SetDefaultCellAlignment(wxALIGN_LEFT, wxALIGN_CENTER);
+   mGrid->SetRowLabelSize(0);
 
    size_t ii = 0;
    for ( const auto &label : {
@@ -821,7 +822,7 @@ void LabelDialog::OnChangeTrack(wxGridEvent & WXUNUSED(event), int row, RowData 
          XO("Label Track").Translation());
 
       // User canceled so repopulating the grid will set the track
-      // name to the orignal value
+      // name to the original value
       if (d.ShowModal() == wxID_CANCEL) {
          TransferDataToWindow();
          return;

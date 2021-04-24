@@ -64,10 +64,13 @@ protected:
 
    //! %Format the error message for this exception.
    virtual TranslatableString ErrorMessage() const = 0;
+   virtual wxString ErrorHelpUrl() const { return helpUrl; };
 
 private:
    TranslatableString caption; //!< Stored caption
    mutable bool moved { false }; //!< Whether @c *this has been the source of a copy
+protected:
+   mutable wxString helpUrl{ "" };
 };
 
 //! A MessageBoxException that shows a given, unvarying string.
@@ -76,11 +79,14 @@ class SimpleMessageBoxException /* not final */ : public MessageBoxException
 public:
    explicit SimpleMessageBoxException(
       const TranslatableString &message_, //<! Message to show
-      const TranslatableString &caption = XO("Message") //<! Short caption in frame around message
+      const TranslatableString &caption = XO("Message"), //<! Short caption in frame around message
+      const wxString &helpUrl_ = "" // Optional URL for help.
    )
       : MessageBoxException{ caption }
       , message{ message_ }
-   {}
+   {
+      helpUrl = helpUrl_;
+   }
    ~SimpleMessageBoxException() override;
 
    SimpleMessageBoxException( const SimpleMessageBoxException& ) = default;
